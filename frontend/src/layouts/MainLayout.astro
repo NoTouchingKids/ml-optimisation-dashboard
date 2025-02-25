@@ -1,0 +1,18 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+import Navigation from "../components/Navigation";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<BaseLayout title={title} description={description}>
+  <Navigation client:load />
+  <main class="container mx-auto px-4 py-8">
+    <slot />
+  </main>
+</BaseLayout>

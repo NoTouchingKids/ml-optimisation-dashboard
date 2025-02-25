@@ -1,0 +1,14 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import PredictionPage from "../components/PredictionPage";
+import AuthLayout from "../layouts/AuthLayout";
+
+const title = "Model Prediction";
+const description = "ML Optimizer - Model Prediction Interface";
+---
+
+<BaseLayout title={title} description={description}>
+  <AuthLayout client:load>
+    <PredictionPage client:load />
+  </AuthLayout>
+</BaseLayout>

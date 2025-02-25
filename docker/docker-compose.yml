@@ -1,0 +1,61 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: timescaledb
+    # Add these to your docker-compose.yml for TimescaleDB
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=logsdb
+      - max_connections=200
+      - shared_buffers=256MB
+      - effective_cache_size=768MB
+      - maintenance_work_mem=64MB
+      - checkpoint_completion_target=0.9
+      - wal_buffers=16MB
+      - default_statistics_target=100
+      - random_page_cost=1.1
+      - effective_io_concurrency=200
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command: postgres -c max_connections=200 -c shared_buffers=256MB -c max_prepared_transactions=100
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: userdb
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - timescaledb
+    restart: unless-stopped
+
+volumes:
+  timescaledb_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  postgres_data:

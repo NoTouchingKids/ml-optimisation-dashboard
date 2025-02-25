@@ -1,0 +1,14 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import TrainingPage from "../components/TrainingPage";
+import AuthLayout from "../layouts/AuthLayout";
+
+const title = "Model Training";
+const description = "ML Optimizer - Model Training Interface";
+---
+
+<BaseLayout title={title} description={description}>
+  <AuthLayout client:load>
+    <TrainingPage client:load />
+  </AuthLayout>
+</BaseLayout>

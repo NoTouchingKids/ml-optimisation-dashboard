@@ -1,0 +1,17 @@
+server:
+  grpc_address: "[::1]:50051"
+  udp_host: "localhost"
+  udp_port: 9999
+
+logging:
+  level: "INFO"
+  file: "service.log"
+
+model:
+  path: "./models"
+  feature_engineering: true
+  default_forecast_periods: 30
+
+monitoring:
+  health_check_interval: 60
+  resource_warning_threshold: 90

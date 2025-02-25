@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package process;
+
+option go_package = "./process";
+
+service ProcessService {
+  rpc StartProcess(StartProcessRequest) returns (ProcessResponse) {}
+  rpc StreamLogs(LogRequest) returns (stream LogMessage) {}
+}
+
+message StartProcessRequest {
+  string client_id = 1;
+  string payload = 2;
+}
+
+message ProcessResponse {
+  string client_id = 1;
+  int32 process_id = 2;
+  string status = 3;
+}
+
+message LogRequest {
+  string client_id = 1;
+}
+
+message LogMessage {
+  int64 timestamp = 1;
+  string client_id = 2;
+  bytes message = 3;
+  string process_id = 4;
+}
