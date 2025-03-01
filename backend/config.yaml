@@ -11,3 +11,16 @@ database:
 
 grpc:
   server_address: "[::1]:50051"
+
+kafka:
+  brokers:
+    - "localhost:29092"
+  command_topic: "ml-commands"
+  status_topic: "ml-status"
+  consumer_group: "ml-service"
+
+log_streaming:
+  host: "0.0.0.0" # Listen on all interfaces
+  port: 9999
+  buffer_size: 1000
+  flush_interval_ms: 500

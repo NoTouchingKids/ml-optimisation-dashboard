@@ -1,12 +1,12 @@
 package handler
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 
 	"backend/internal/database"
+	"backend/internal/event"
 	"backend/internal/grpc"
 	"backend/internal/types"
 
@@ -16,12 +16,14 @@ import (
 type RESTHandler struct {
 	db         *database.Client
 	grpcClient *grpc.Client
+	producer   *event.Producer
 }
 
-func NewRESTHandler(db *database.Client, grpcClient *grpc.Client) *RESTHandler {
+func NewRESTHandler(db *database.Client, grpcClient *grpc.Client, producer *event.Producer) *RESTHandler {
 	return &RESTHandler{
 		db:         db,
 		grpcClient: grpcClient,
+		producer:   producer,
 	}
 }
 
@@ -33,22 +35,27 @@ func (h *RESTHandler) HandleTrain(c *gin.Context) {
 		return
 	}
 
-	payload, err := json.Marshal(req)
+	// Publish train request event to Kafka
+	err := h.producer.PublishTrainRequest(
+		c.Request.Context(),
+		req.ClientID,
+		req.Data,
+		req.StartDate,
+		req.EndDate,
+		req.Configuration,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Printf("Failed to publish train event: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to publish event: %v", err)})
 		return
 	}
-	// Log the payload being sent
-	// log.Printf("Sending payload to gRPC: %+v", payload)
 
-	resp, err := h.grpcClient.StartProcess(c.Request.Context(), req.ClientID, payload)
-	if err != nil {
-		log.Printf("gRPC call failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("gRPC error: %v", err)})
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
+	// Return immediate acknowledgment
+	c.JSON(http.StatusAccepted, gin.H{
+		"client_id": req.ClientID,
+		"status":    "pending",
+		"message":   "Training request has been queued",
+	})
 }
 
 func (h *RESTHandler) HandlePredict(c *gin.Context) {
@@ -58,18 +65,25 @@ func (h *RESTHandler) HandlePredict(c *gin.Context) {
 		return
 	}
 
-	payload, err := json.Marshal(req)
+	// Publish predict request event to Kafka
+	err := h.producer.PublishPredictRequest(
+		c.Request.Context(),
+		req.ClientID,
+		req.Data,
+		req.Configuration,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	resp, err := h.grpcClient.StartProcess(c.Request.Context(), req.ClientID, payload)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Printf("Failed to publish predict event: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to publish event: %v", err)})
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	// Return immediate acknowledgment
+	c.JSON(http.StatusAccepted, gin.H{
+		"client_id": req.ClientID,
+		"status":    "pending",
+		"message":   "Prediction request has been queued",
+	})
 }
 
 func (h *RESTHandler) HandleStatus(c *gin.Context) {

@@ -1,3 +1,4 @@
+// backend/internal/handler/websocket.go
 package handler
 
 import (
@@ -23,7 +24,8 @@ type WebSocketHandler struct {
 	connections map[*types.WSConnection]bool
 	mu          sync.RWMutex
 
-	clients map[*types.WSConnection]bool
+	clients   map[string][]*types.WSConnection
+	clientsMu sync.RWMutex
 
 	// Dependencies
 	db         *database.Client
@@ -35,6 +37,17 @@ type WebSocketHandler struct {
 	logBuffer *buffer.LogBuffer
 }
 
+// GetClientConnections returns all WebSocket connections for a client
+func (h *WebSocketHandler) GetClientConnections(clientID string) []*types.WSConnection {
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+
+	// Return a copy of the connections to avoid race conditions
+	connections := make([]*types.WSConnection, len(h.clients[clientID]))
+	copy(connections, h.clients[clientID])
+	return connections
+}
+
 // NewWebSocketHandler creates a new WebSocket handler
 func NewWebSocketHandler(db *database.Client, grpcClient *grpc.Client, logBuffer *buffer.LogBuffer) *WebSocketHandler {
 	return &WebSocketHandler{
@@ -43,10 +56,11 @@ func NewWebSocketHandler(db *database.Client, grpcClient *grpc.Client, logBuffer
 				return true
 			},
 		},
-		clients:    make(map[*types.WSConnection]bool),
-		logBuffer:  logBuffer,
-		db:         db,
-		grpcClient: grpcClient,
+		connections: make(map[*types.WSConnection]bool),
+		clients:     make(map[string][]*types.WSConnection),
+		logBuffer:   logBuffer,
+		db:          db,
+		grpcClient:  grpcClient,
 	}
 }
 
@@ -64,12 +78,44 @@ func (h *WebSocketHandler) HandleConnection(c *gin.Context) {
 		ClientID: clientID,
 	}
 
-	h.mu.Lock()
-	h.clients[conn] = true
-	h.mu.Unlock()
-
+	h.registerConnection(conn)
 	go h.handleMessages(conn)
 	go h.streamLogs(conn)
+}
+
+// BroadcastToClient sends a message to all connections for a specific client
+func (h *WebSocketHandler) BroadcastToClient(clientID string, message types.WSMessage) {
+	h.clientsMu.RLock()
+	connections := h.clients[clientID]
+	h.clientsMu.RUnlock()
+
+	for _, conn := range connections {
+		// Send in a non-blocking way
+		go func(c *types.WSConnection, msg types.WSMessage) {
+			if err := h.sendMessage(c, msg); err != nil {
+				log.Printf("Error broadcasting to client %s: %v", clientID, err)
+			}
+		}(conn, message)
+	}
+}
+
+// BroadcastToAll sends a message to all connected clients
+func (h *WebSocketHandler) BroadcastToAll(message types.WSMessage) {
+	h.mu.RLock()
+	connections := make([]*types.WSConnection, 0, len(h.connections))
+	for conn := range h.connections {
+		connections = append(connections, conn)
+	}
+	h.mu.RUnlock()
+
+	for _, conn := range connections {
+		// Send in a non-blocking way
+		go func(c *types.WSConnection, msg types.WSMessage) {
+			if err := h.sendMessage(c, msg); err != nil {
+				log.Printf("Error broadcasting to all: %v", err)
+			}
+		}(conn, message)
+	}
 }
 
 func (h *WebSocketHandler) streamLogs(conn *types.WSConnection) {
@@ -83,7 +129,6 @@ func (h *WebSocketHandler) streamLogs(conn *types.WSConnection) {
 		select {
 		case <-ticker.C:
 			if !h.logBuffer.HasLogs(conn.ClientID) {
-
 				noDataCount++
 				if noDataCount >= maxEmptyChecks {
 					return
@@ -114,17 +159,43 @@ func (h *WebSocketHandler) streamLogs(conn *types.WSConnection) {
 // registerConnection adds a new WebSocket connection to the handler
 func (h *WebSocketHandler) registerConnection(conn *types.WSConnection) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.connections[conn] = true
+	h.mu.Unlock()
+
+	// Register with client ID
+	h.clientsMu.Lock()
+	h.clients[conn.ClientID] = append(h.clients[conn.ClientID], conn)
+	h.clientsMu.Unlock()
 
 	// Setup cleanup when connection closes
 	go func() {
 		<-h.waitForDisconnect(conn)
-		h.mu.Lock()
-		delete(h.connections, conn)
-		h.mu.Unlock()
-		conn.Conn.Close()
+		h.unregisterConnection(conn)
 	}()
+}
+
+// unregisterConnection removes a WebSocket connection
+func (h *WebSocketHandler) unregisterConnection(conn *types.WSConnection) {
+	h.mu.Lock()
+	delete(h.connections, conn)
+	h.mu.Unlock()
+
+	h.clientsMu.Lock()
+	clientConns := h.clients[conn.ClientID]
+	for i, c := range clientConns {
+		if c == conn {
+			// Remove this connection
+			h.clients[conn.ClientID] = append(clientConns[:i], clientConns[i+1:]...)
+			break
+		}
+	}
+	// If no more connections for this client, remove the client entry
+	if len(h.clients[conn.ClientID]) == 0 {
+		delete(h.clients, conn.ClientID)
+	}
+	h.clientsMu.Unlock()
+
+	conn.Conn.Close()
 }
 
 // waitForDisconnect monitors connection for closure
@@ -150,9 +221,7 @@ func (h *WebSocketHandler) handleMessages(conn *types.WSConnection) {
 			if websocket.IsUnexpectedCloseError(err) {
 				log.Printf("WebSocket closed: %v", err)
 			}
-			h.mu.Lock()
-			delete(h.clients, conn)
-			h.mu.Unlock()
+			h.unregisterConnection(conn)
 			return
 		}
 
@@ -204,24 +273,6 @@ func (h *WebSocketHandler) handleHistoryRequest(conn *types.WSConnection, msg ty
 	}
 }
 
-// handleModelStatus processes model status updates
-func (h *WebSocketHandler) handleModelStatus(conn *types.WSConnection, msg types.WSMessage) {
-	var status types.ModelStatus
-	if err := json.Unmarshal(msg.Payload.(json.RawMessage), &status); err != nil {
-		h.sendErrorMessage(conn, "Invalid model status format")
-		return
-	}
-
-	// Update status in database
-	if err := h.db.UpdateModelStatus(context.Background(), status); err != nil {
-		log.Printf("Failed to update model status: %v", err)
-		return
-	}
-
-	// Broadcast status to interested clients
-	h.broadcastModelStatus(status)
-}
-
 // sendMessage sends a message to a specific connection
 func (h *WebSocketHandler) sendMessage(conn *types.WSConnection, msg types.WSMessage) error {
 	conn.Mu.Lock()
@@ -238,21 +289,4 @@ func (h *WebSocketHandler) sendErrorMessage(conn *types.WSConnection, errMsg str
 		},
 	}
 	h.sendMessage(conn, response)
-}
-
-// broadcastModelStatus sends status updates to all relevant connections
-func (h *WebSocketHandler) broadcastModelStatus(status types.ModelStatus) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	msg := types.WSMessage{
-		Type:    types.MessageTypeModelStatus,
-		Payload: status,
-	}
-
-	for conn := range h.connections {
-		if conn.ClientID == status.ClientID {
-			go h.sendMessage(conn, msg)
-		}
-	}
 }

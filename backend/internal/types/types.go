@@ -28,7 +28,7 @@ type LogRecord struct {
 	Timestamp int64  `json:"timestamp"`
 	ClientID  string `json:"client_id"`
 	Message   []byte `json:"message"`
-	ProcessID int32  `json:"process_id,omitempty"`
+	ProcessID string `json:"process_id,omitempty"`
 }
 
 // WSConnection represents a WebSocket connection
@@ -36,6 +36,21 @@ type WSConnection struct {
 	Conn     *websocket.Conn
 	ClientID string
 	Mu       sync.Mutex
+}
+
+func (c *WSConnection) WriteBinaryMessage(v []byte) error {
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	w, err := c.Conn.NextWriter(websocket.BinaryMessage)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(v)
+	if err != nil {
+		return err
+	}
+	err = w.Close()
+	return err
 }
 
 func (c *WSConnection) WriteJSON(v interface{}) error {
@@ -60,7 +75,7 @@ type ModelRequest struct {
 	Data          []float64   `json:"data,omitempty"`
 	StartDate     string      `json:"start_date,omitempty"`
 	EndDate       string      `json:"end_date,omitempty"`
-	Configuration ModelConfig `json:"config,omitempty"`
+	Configuration interface{} `json:"config,omitempty"`
 }
 
 // ModelConfig represents model configuration options

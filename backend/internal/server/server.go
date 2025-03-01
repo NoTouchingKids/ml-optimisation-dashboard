@@ -1,3 +1,4 @@
+// backend/internal/server/server.go
 package server
 
 import (
@@ -10,22 +11,33 @@ import (
 	"backend/internal/buffer"
 	"backend/internal/config"
 	"backend/internal/database"
+	"backend/internal/event"
 	"backend/internal/grpc"
 	"backend/internal/handler"
+	"backend/internal/orchestrator"
+	"backend/internal/query"
 	"backend/internal/store"
+	"backend/internal/streaming"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
-	cfg        *config.Config
-	router     *gin.Engine
-	db         *database.Client
-	userDB     *database.UserDB
-	userStore  *store.UserStore
-	jwtService *auth.JWTService
-	grpcClient *grpc.Client
-	logBuffer  *buffer.LogBuffer
+	cfg              *config.Config
+	router           *gin.Engine
+	db               *database.Client
+	userDB           *database.UserDB
+	userStore        *store.UserStore
+	jwtService       *auth.JWTService
+	grpcClient       *grpc.Client
+	logBuffer        *buffer.LogBuffer
+	producer         *event.Producer
+	commandConsumer  *event.Consumer
+	statusConsumer   *event.Consumer
+	orchestrator     *orchestrator.MLOrchestrator
+	statusHandler    *handler.StatusHandler
+	logStreamService *streaming.LogStreamingService
+	queryService     *query.QueryService
 }
 
 func New(cfg *config.Config, tsdb *database.Client, userDB *database.UserDB,
@@ -36,36 +48,88 @@ func New(cfg *config.Config, tsdb *database.Client, userDB *database.UserDB,
 		return nil, fmt.Errorf("initializing database: %w", err)
 	}
 
-	// Initialize gRPC client
+	// Initialize log buffer
 	logBuffer := buffer.NewLogBuffer(100) // Buffer 100 logs per client
+
+	// Initialize gRPC client
 	grpcClient, err := grpc.NewClient(cfg.GRPC.ServerAddress, logBuffer)
 	if err != nil {
 		return nil, fmt.Errorf("initializing gRPC client: %w", err)
 	}
 
+	// Initialize Kafka producers/consumers
+	producer := event.NewProducer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.CommandTopic,
+		cfg.Kafka.StatusTopic,
+	)
+
+	// Create separate consumers for different components
+	commandConsumer := event.NewConsumer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.ConsumerGroup+"-command",
+		[]string{cfg.Kafka.CommandTopic},
+	)
+
+	statusConsumer := event.NewConsumer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.ConsumerGroup+"-status",
+		[]string{cfg.Kafka.StatusTopic},
+	)
+
 	// Initialize router
 	router := gin.Default()
 
-	server := &Server{
-		cfg:        cfg,
-		router:     router,
-		db:         db,
-		userDB:     userDB,
-		userStore:  userStore,
-		jwtService: jwtService,
-		grpcClient: grpcClient,
-		logBuffer:  logBuffer,
+	// Setup WebSocket handler
+	wsHandler := handler.NewWebSocketHandler(db, grpcClient, logBuffer)
+
+	// Setup Status handler
+	statusHandler := handler.NewStatusHandler(db, wsHandler, statusConsumer)
+
+	// Setup ML Orchestrator
+	mlOrchestrator := orchestrator.NewMLOrchestrator(grpcClient, producer, commandConsumer)
+
+	// Setup Log Streaming Service
+	logStreamService, err := streaming.NewLogStreamingService(
+		cfg.LogStreaming.Host,
+		cfg.LogStreaming.Port,
+		1000, // Buffer size
+		db,
+		wsHandler,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("initializing log streaming service: %w", err)
 	}
 
-	server.setupRoutes()
+	// Setup Query Service
+	queryService := query.NewQueryService(db, statusConsumer)
+
+	server := &Server{
+		cfg:              cfg,
+		router:           router,
+		db:               db,
+		userDB:           userDB,
+		userStore:        userStore,
+		jwtService:       jwtService,
+		grpcClient:       grpcClient,
+		logBuffer:        logBuffer,
+		producer:         producer,
+		commandConsumer:  commandConsumer,
+		statusConsumer:   statusConsumer,
+		orchestrator:     mlOrchestrator,
+		statusHandler:    statusHandler,
+		logStreamService: logStreamService,
+		queryService:     queryService,
+	}
+
+	server.setupRoutes(wsHandler)
 	return server, nil
 }
 
-func (s *Server) setupRoutes() {
+func (s *Server) setupRoutes(wsHandler *handler.WebSocketHandler) {
 	// Create handlers
-	// logBuffer := buffer.NewLogBuffer(100)
-	wsHandler := handler.NewWebSocketHandler(s.db, s.grpcClient, s.logBuffer)
-	restHandler := handler.NewRESTHandler(s.db, s.grpcClient)
+	restHandler := handler.NewRESTHandler(s.db, s.grpcClient, s.producer)
+	queryHandler := handler.NewQueryHandler(s.queryService)
 
 	// CORS middleware
 	s.router.Use(func(c *gin.Context) {
@@ -87,15 +151,41 @@ func (s *Server) setupRoutes() {
 	// REST routes
 	api := s.router.Group("/api")
 	{
+		// Command routes
 		api.POST("/model/train", restHandler.HandleTrain)
 		api.POST("/model/predict", restHandler.HandlePredict)
 		api.GET("/model/status/:clientId", restHandler.HandleStatus)
+
+		// Query routes
+		query := api.Group("/query")
+		{
+			query.GET("/model/:clientId", queryHandler.GetModelState)
+			query.GET("/models/running", queryHandler.GetRunningModels)
+			query.GET("/models/history", queryHandler.QueryModelHistory)
+			query.GET("/logs/:clientId/summary", queryHandler.GetLogSummary)
+		}
 	}
 }
 
 func (s *Server) Run(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.Host, s.cfg.Server.Port)
 	log.Printf("Starting server on %s", addr)
+
+	// Start the Log Streaming Service
+	if err := s.logStreamService.Start(ctx); err != nil {
+		return fmt.Errorf("starting log streaming service: %w", err)
+	}
+
+	// Start the Query Service
+	if err := s.queryService.Start(ctx); err != nil {
+		return fmt.Errorf("starting query service: %w", err)
+	}
+
+	// Start the ML orchestrator
+	s.orchestrator.Start(ctx)
+
+	// Start the status handler
+	s.statusHandler.Start(ctx)
 
 	srv := &http.Server{
 		Addr:    addr,
@@ -116,8 +206,30 @@ func (s *Server) Run(ctx context.Context) error {
 	return nil
 }
 
-// Modify Shutdown method to return an error
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Stop the Log Streaming Service
+	if err := s.logStreamService.Stop(); err != nil {
+		log.Printf("Log streaming service shutdown error: %v", err)
+	}
+
+	// Stop the Query Service
+	s.queryService.Stop()
+
+	// Stop the ML orchestrator
+	s.orchestrator.Stop()
+
+	// Stop the status handler
+	s.statusHandler.Stop()
+
+	// Close the Kafka consumers
+	s.commandConsumer.Stop()
+	s.statusConsumer.Stop()
+
+	// Close the Kafka producer
+	if err := s.producer.Close(); err != nil {
+		log.Printf("Kafka producer shutdown error: %v", err)
+	}
+
 	if err := s.db.Close(); err != nil {
 		log.Printf("Database shutdown error: %v", err)
 		return err

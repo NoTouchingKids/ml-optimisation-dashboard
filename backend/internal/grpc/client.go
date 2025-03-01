@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"backend/internal/buffer"
+	"backend/internal/types"
 	pb "backend/proto"
 	"context"
 	"fmt"
@@ -69,7 +70,7 @@ func (c *Client) handleLogStream() {
 		}
 		// log.Printf("Received log: %+v", msg)
 		// Store received log in buffer
-		record := buffer.LogRecord{
+		record := types.LogRecord{
 			Timestamp: msg.Timestamp,
 			ClientID:  msg.ClientId,
 			Message:   msg.Message,

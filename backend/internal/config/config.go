@@ -8,9 +8,11 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	GRPC     GRPCConfig     `yaml:"grpc"`
+	Server       ServerConfig       `yaml:"server"`
+	Database     DatabaseConfig     `yaml:"database"`
+	GRPC         GRPCConfig         `yaml:"grpc"`
+	Kafka        KafkaConfig        `yaml:"kafka"`
+	LogStreaming LogStreamingConfig `yaml:"log_streaming"`
 }
 
 type ServerConfig struct {

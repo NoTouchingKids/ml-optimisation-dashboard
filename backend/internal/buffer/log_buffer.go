@@ -3,14 +3,9 @@ package buffer
 import (
 	"container/ring"
 	"sync"
-)
 
-type LogRecord struct {
-	Timestamp int64  `json:"timestamp"`
-	ClientID  string `json:"client_id"`
-	Message   []byte `json:"message"`
-	ProcessID string `json:"process_id,omitempty"`
-}
+	"backend/internal/types"
+)
 
 type LogBuffer struct {
 	mu      sync.RWMutex
@@ -25,7 +20,7 @@ func NewLogBuffer(size int) *LogBuffer {
 	}
 }
 
-func (lb *LogBuffer) Push(clientID string, record LogRecord) {
+func (lb *LogBuffer) Push(clientID string, record types.LogRecord) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
@@ -39,7 +34,7 @@ func (lb *LogBuffer) Push(clientID string, record LogRecord) {
 	lb.buffers[clientID] = buffer.Next()
 }
 
-func (lb *LogBuffer) GetLogs(clientID string) []LogRecord {
+func (lb *LogBuffer) GetLogs(clientID string) []types.LogRecord {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
@@ -48,17 +43,17 @@ func (lb *LogBuffer) GetLogs(clientID string) []LogRecord {
 		return nil
 	}
 
-	var logs []LogRecord
+	var logs []types.LogRecord
 	buffer.Do(func(x interface{}) {
 		if x != nil {
-			logs = append(logs, x.(LogRecord))
+			logs = append(logs, x.(types.LogRecord))
 		}
 	})
 
 	return logs
 }
 
-func (lb *LogBuffer) PopLogs(clientID string) []LogRecord {
+func (lb *LogBuffer) PopLogs(clientID string) []types.LogRecord {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
@@ -67,10 +62,10 @@ func (lb *LogBuffer) PopLogs(clientID string) []LogRecord {
 		return nil
 	}
 
-	var logs []LogRecord
+	var logs []types.LogRecord
 	buffer.Do(func(x interface{}) {
 		if x != nil {
-			logs = append(logs, x.(LogRecord))
+			logs = append(logs, x.(types.LogRecord))
 		}
 	})
 
