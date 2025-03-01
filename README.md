@@ -1,92 +1,98 @@
-# ml-optimisation-dashboard
+# Ml & optimisation dashboard
 
-# Summary of the Overall Architecture
+TBC
 
-Let me summarize the redesigned event-driven architecture that maintains your existing technologies while providing better scalability and performance:
+## Summary of the Overall Architecture
 
-Note : This not just for machine learning but also Mathmatical optimisstion as well like guroby py
+### System Overview
 
-## Core Components
+The architecture consists of a monolithic Go backend and a separate ML Orchestrator microservice. This hybrid approach provides the simplicity of a monolith for primary application functions while isolating machine learning orchestration in a dedicated microservice for better scalability and separation of concerns.
 
-the philosophy is Backend should be Monolith and rest should suport functions should microservices which can be scaled. The backend worldn't be suturated as there limited no processing that need to be done in it.
+### Key Components
 
-### Go Backend (as Monolith when posible)
+#### 1. Monolithic Go Backend
 
-1. **API Gateway**
+- **Primary Application**: Serves as the core application and single entry point for all client interactions
+- **Clean Architecture**: Implemented in layers (Domain, Application, Infrastructure, Presentation)
+- **Client Communication**: Handles all REST API requests and WebSocket connections
+- **Database Access**: Interacts with databases (TimescaleDB, PostgreSQL) but does not manage migrations
+- **Event Publishing**: Publishes ML-related commands and status updates to Kafka
 
-   - Entry point for client HTTP/HTTPS requests and WebSocket connections
-   - Routes commands to appropriate services
+#### 2. ML Orchestrator Microservice
 
-2. **Command Service**
+- **Event-Driven Service**: Listens to commands on the Kafka event bus
+- **ML Workflow Management**: Orchestrates machine learning processes
+- **Service Communication**: Communicates directly with Python ML services via gRPC
+- **Resilience Patterns**: Implements circuit breaking, retries, and timeouts
+- **Status Updates**: Publishes process updates back to Kafka for client notification
 
-   - Processes user commands (train model, run prediction)
-   - Validates requests and publishes events to the Event Backbone
-   - Handles authorization and validation
-     This Service also handle all client interactions like usermanagement and may be auth using JWT.
+#### 3. Event Bus (Kafka)
 
-3. **Query Service**
+- **Command Channel**: For ML process commands (train, predict)
+- **Status Channel**: For ML process status updates
+- **Internal Communication**: Used exclusively for communication between Go Backend and ML Orchestrator
+- **Durable Messaging**: Ensures reliable command and event delivery
 
-   - Maintains materialized views of system state
-   - Provides APIs for historical data and analytics
-   - Subscribes to events from Event Backbone for state updates
+#### 4. Python ML Services
 
-4. **Log Streaming Service**
-   Not sure if this need to be part of the Monolith
-   - Receives logs via UDP from Python services
-   - Optimized for high-throughput (50-100+ logs per second per model)
-   - Direct streaming to WebSocket clients without going through Event Backbone
-     > Note: WebSockets used specifically because SSE doesn't support byte arrays
-   - Stores all logs in TimescaleDB
+- **Model Processing**: Executes actual ML model training and inference
+- **gRPC Server**: Exposes ML functionality via gRPC interfaces
+- **Isolated Processing**: No direct access to clients or database
 
-### Go Backend not part of Monolith sturcture
+#### 5. Databases
 
-1. **ML Orchestrator (this as a microservices)**
+- **TimescaleDB**: For time-series data like logs and metrics
+- **PostgreSQL**: For relational data like users and model metadata
+- **External Management**: Schema and migrations managed outside the Go application
 
-   - Subscribes to command events from the Event Backbone
-   - Communicates with Python ML services via gRPC
-   - Tracks job status and publishes status updates to Event Backbone
-   - Also tack Python ML services cluster's health satus and stating and stoping clusters.
+### Data Flow
 
-### Event / message bus
+1. **Client Request Flow**:
 
-- Central message bus for control messages and workflow orchestration
-- Handles commands, status updates, and system events
-- Implemented with a message broker Kafka
+   - Web client sends requests to Go Backend via REST API
+   - Go Backend processes business logic and publishes commands to Kafka
+   - ML Orchestrator consumes commands and communicates with Python ML services
+   - Status updates flow back through Kafka to Go Backend
+   - Go Backend notifies clients via WebSockets
 
-### Kafka
+2. **Log Processing Flow**:
+   - ML services generate logs during processing
+   - Logs are streamed via UDP to the Go Backend
+   - Go Backend processes and persists logs to TimescaleDB
+   - Real-time logs are streamed to clients via WebSockets
 
-- Event backbone for Control Plane
-- Handles commands, statuses, and workflow events
-- Provides persistence and replay capabilities
+### Technology Stack
 
-### Python ML Service
+1. **Go Backend**:
 
-This definatly a microservices and act as cluster were the main service would handle request from `ML Orchestrator` and spawn/flork worker to do ML or Optimistioan.
+   - Language: Go
+   - Web Framework: Gin
+   - Database Access: Standard library or sqlc
+   - WebSockets: gorilla/websocket
+   - Kafka Client: segmentio/kafka-go
+   - Observability: zap or zerolog for logging, Prometheus for metrics
 
-- Receives requests via gRPC from ML Orchestration Module
-- Executes ML tasks (training, prediction)
-- Sends logs via UDP to Log Streaming Module
-- Returns results via gRPC
+2. **ML Orchestrator**:
 
-### TimescaleDB
+   - Language: Go
+   - Kafka Client: segmentio/kafka-go
+   - gRPC: google.golang.org/grpc
+   - Resilience: circuitbreaker patterns, timeout middleware
 
-- Stores time-series log data
-- Optimized for time-based queries
-- Maintains history for analytics
+3. **External Components**:
+   - Kafka: Event streaming platform
+   - TimescaleDB: Time-series database for logs and metrics
+   - PostgreSQL: Relational database for user and model data
+   - Python ML Services: gRPC servers running ML models
+   - Mnio: for S3 like file store
 
-## Key Information Flows
+### Key Design Principles
 
-### Command Flow
+1. **Separation of Concerns**: Clean boundaries between components and layers
+2. **Single Responsibility**: Each component has a clear, focused purpose
+3. **Interface-Based Design**: Dependencies are defined through interfaces
+4. **Observability**: Comprehensive logging, metrics, and tracing
+5. **Resilience**: Fault tolerance through circuit breakers, retries, and timeouts
+6. **Event-Driven Communication**: Loose coupling through event-based messaging
 
-1. Client sends command via HTTP
-2. API Gateway validates and publishes command event to Event Backbone
-3. ML Orchestrator receives command event and calls Python service via gRPC
-4. Status updates flow back through Event Backbone
-5. WebSocket connections receive status updates
-
-### Log Flow
-
-1. Python service sends logs via UDP to Log Streaming Service
-2. Log Streaming Service processes and stores logs in TimescaleDB
-3. Log Streaming Service streams logs directly to connected WebSockets else if the client is not conneted that buffer n amount new loggs FIFO struture.
-4. Clients receive logs in batches for efficient processing
+This architecture provides a robust foundation for ML workflows while maintaining clean separation between client-facing functionality and complex ML orchestration processes.
