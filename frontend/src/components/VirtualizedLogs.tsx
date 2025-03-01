@@ -35,7 +35,6 @@ export function VirtualizedLogs({ logs = [] }: VirtualizedLogsProps) {
     overscan: 5,
     measureElement: (el) => el.getBoundingClientRect().height,
     onChange: (instance) => {
-      console.log(innerRef.current);
       // innerRef.current!.style.height = `${instance.getTotalSize()}px`;
       instance.getVirtualItems().forEach((virtualRow) => {
         const rowRef = rowRefsMap.current.get(virtualRow.index);

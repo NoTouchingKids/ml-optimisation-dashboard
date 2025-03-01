@@ -122,7 +122,8 @@ export class ModelAPIImpl implements ModelAPI {
     };
 
     this.ws.onclose = () => {
-      setTimeout(() => this.initializeWebSocket(), 1000);
+      alert("stop");
+      // setTimeout(() => this.initializeWebSocket(), 1000);
     };
 
     this.ws.onerror = (error) => {
