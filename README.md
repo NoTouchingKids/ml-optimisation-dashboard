@@ -24,26 +24,28 @@ the philosophy is Backend should be Monolith and rest should suport functions sh
    - Handles authorization and validation
      This Service also handle all client interactions like usermanagement and may be auth using JWT.
 
-3. **ML Orchestrator**
-
-   - Subscribes to command events from the Event Backbone
-   - Communicates with Python ML services via gRPC
-   - Tracks job status and publishes status updates to Event Backbone
-   - Also tack Python ML services cluster's health satus and stating and stoping clusters.
-
-4. **Query Service**
+3. **Query Service**
 
    - Maintains materialized views of system state
    - Provides APIs for historical data and analytics
    - Subscribes to events from Event Backbone for state updates
 
-5. **Log Streaming Service**
+4. **Log Streaming Service**
    Not sure if this need to be part of the Monolith
    - Receives logs via UDP from Python services
    - Optimized for high-throughput (50-100+ logs per second per model)
    - Direct streaming to WebSocket clients without going through Event Backbone
      > Note: WebSockets used specifically because SSE doesn't support byte arrays
    - Stores all logs in TimescaleDB
+
+### Go Backend not part of Monolith sturcture
+
+1. **ML Orchestrator (this as a microservices)**
+
+   - Subscribes to command events from the Event Backbone
+   - Communicates with Python ML services via gRPC
+   - Tracks job status and publishes status updates to Event Backbone
+   - Also tack Python ML services cluster's health satus and stating and stoping clusters.
 
 ### Event / message bus
 
