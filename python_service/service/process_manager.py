@@ -8,11 +8,12 @@ def run_process(client_id: str, config: Dict[str, Any]):
         # process_type = config.get("type", "train")
         process = MockPredictProcess(client_id, config)
         process.execute()
+
     except Exception as e:
         print(f"Process failed: {e}")
-    finally:
-        if hasattr(process, "cleanup"):
-            process.cleanup()
+    # finally:
+    #     if hasattr(process, "cleanup"):
+    #         process.cleanup()
 
 
 class ProcessManager:
@@ -33,7 +34,7 @@ class ProcessManager:
         process = self.processes.get(client_id)
         if process and process.is_alive():
             process.terminate()
-            process.join(timeout=5)
+            process.join(timeout=0.5)
             del self.processes[client_id]
             return True
         return False
@@ -42,4 +43,4 @@ class ProcessManager:
         for process in self.processes.values():
             if process.is_alive():
                 process.terminate()
-                process.join(timeout=5)
+                process.join(timeout=0.1)

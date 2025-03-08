@@ -59,7 +59,7 @@ class MockPredictProcess(BaseProcess):
             # Example: Gurobi optimization model
             for i in range(num_predictions):  # Replace with actual process
                 self.logger.info(f"Optimization step {i+1}")
-                time.sleep(0.2)  # Simulate work
+                # time.sleep(0.2)  # Simulate work
 
             self.logger.info("Process completed successfully")
 
