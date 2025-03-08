@@ -578,3 +578,4 @@ $RECYCLE.BIN/
 backup/*
 *.bak
 frontend/bak/*
+frontend/bun.lockb
