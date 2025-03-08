@@ -9,7 +9,7 @@ interface VirtualizedLogsProps {
   logs?: LogRecordPayload[];
 }
 
-const UUID_LENGTH = 36; // Standard UUID string length
+const UUID_LENGTH = 16; // Standard UUID string length
 
 const processLog = (raw: LogRecordPayload): LogRecord | undefined => {
   try {

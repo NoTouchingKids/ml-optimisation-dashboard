@@ -43,7 +43,7 @@ export default function PredictionPage() {
     handleStartStop();
     try {
       // Example data - replace with actual data source
-      const data = Array.from({ length: 100 }, () => Math.random());
+      const data = Array.from({ length: 10 }, () => Math.random());
       await predict(data, config);
     } catch (err) {
       console.error("Prediction error:", err);
