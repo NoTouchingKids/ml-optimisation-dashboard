@@ -17,27 +17,25 @@ import (
 	"backend/internal/orchestrator"
 	"backend/internal/query"
 	"backend/internal/store"
-	"backend/internal/streaming"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
-	cfg              *config.Config
-	router           *gin.Engine
-	db               *database.Client
-	userDB           *database.UserDB
-	userStore        *store.UserStore
-	jwtService       *auth.JWTService
-	grpcClient       *grpc.Client
-	logBuffer        *buffer.LogBuffer
-	producer         *event.Producer
-	commandConsumer  *event.Consumer
-	statusConsumer   *event.Consumer
-	orchestrator     *orchestrator.MLOrchestrator
-	statusHandler    *handler.StatusHandler
-	logStreamService *streaming.LogStreamingService
-	queryService     *query.QueryService
+	cfg             *config.Config
+	router          *gin.Engine
+	db              *database.Client
+	userDB          *database.UserDB
+	userStore       *store.UserStore
+	jwtService      *auth.JWTService
+	grpcClient      *grpc.Client
+	logBuffer       *buffer.LogBuffer
+	producer        *event.Producer
+	commandConsumer *event.Consumer
+	statusConsumer  *event.Consumer
+	orchestrator    *orchestrator.MLOrchestrator
+	statusHandler   *handler.StatusHandler
+	queryService    *query.QueryService
 }
 
 func New(cfg *config.Config, tsdb *database.Client, userDB *database.UserDB,
@@ -89,14 +87,6 @@ func New(cfg *config.Config, tsdb *database.Client, userDB *database.UserDB,
 	// Setup ML Orchestrator
 	mlOrchestrator := orchestrator.NewMLOrchestrator(grpcClient, producer, commandConsumer)
 
-	// Setup Log Streaming Service
-	logStreamService, err := streaming.NewLogStreamingService(
-		cfg.LogStreaming.Host,
-		cfg.LogStreaming.Port,
-		1000, // Buffer size
-		db,
-		wsHandler,
-	)
 	if err != nil {
 		return nil, fmt.Errorf("initializing log streaming service: %w", err)
 	}
@@ -105,21 +95,20 @@ func New(cfg *config.Config, tsdb *database.Client, userDB *database.UserDB,
 	queryService := query.NewQueryService(db, statusConsumer)
 
 	server := &Server{
-		cfg:              cfg,
-		router:           router,
-		db:               db,
-		userDB:           userDB,
-		userStore:        userStore,
-		jwtService:       jwtService,
-		grpcClient:       grpcClient,
-		logBuffer:        logBuffer,
-		producer:         producer,
-		commandConsumer:  commandConsumer,
-		statusConsumer:   statusConsumer,
-		orchestrator:     mlOrchestrator,
-		statusHandler:    statusHandler,
-		logStreamService: logStreamService,
-		queryService:     queryService,
+		cfg:             cfg,
+		router:          router,
+		db:              db,
+		userDB:          userDB,
+		userStore:       userStore,
+		jwtService:      jwtService,
+		grpcClient:      grpcClient,
+		logBuffer:       logBuffer,
+		producer:        producer,
+		commandConsumer: commandConsumer,
+		statusConsumer:  statusConsumer,
+		orchestrator:    mlOrchestrator,
+		statusHandler:   statusHandler,
+		queryService:    queryService,
 	}
 
 	server.setupRoutes(wsHandler)
@@ -172,9 +161,9 @@ func (s *Server) Run(ctx context.Context) error {
 	log.Printf("Starting server on %s", addr)
 
 	// Start the Log Streaming Service
-	if err := s.logStreamService.Start(ctx); err != nil {
-		return fmt.Errorf("starting log streaming service: %w", err)
-	}
+	// if err := s.logStreamService.Start(ctx); err != nil {
+	// 	return fmt.Errorf("starting log streaming service: %w", err)
+	// }
 
 	// Start the Query Service
 	if err := s.queryService.Start(ctx); err != nil {
@@ -208,9 +197,9 @@ func (s *Server) Run(ctx context.Context) error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	// Stop the Log Streaming Service
-	if err := s.logStreamService.Stop(); err != nil {
-		log.Printf("Log streaming service shutdown error: %v", err)
-	}
+	// if err := s.logStreamService.Stop(); err != nil {
+	// 	log.Printf("Log streaming service shutdown error: %v", err)
+	// }
 
 	// Stop the Query Service
 	s.queryService.Stop()

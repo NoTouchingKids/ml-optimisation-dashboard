@@ -1,4 +1,3 @@
-// backend/internal/event/producer.go
 package event
 
 import (

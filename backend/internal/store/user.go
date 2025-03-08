@@ -1,9 +1,8 @@
-// internal/store/user.go
 package store
 
 import (
 	"backend/internal/database"
-	"backend/internal/models"
+	"backend/internal/database/models"
 	"context"
 	"errors"
 )

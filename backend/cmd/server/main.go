@@ -30,13 +30,16 @@ func main() {
 	}
 
 	// Initialize TimescaleDB
-	tsdb, err := database.New(config.DatabaseConfig{
-		Host:     cfg.Database.Host,
-		Port:     cfg.Database.Port,
-		User:     cfg.Database.User,
-		Password: cfg.Database.Password,
-		DBName:   cfg.Database.DBName,
-	})
+	tsdb, err := database.New(
+		config.DatabaseConfig{
+			Host:     cfg.Database.Host,
+			Port:     cfg.Database.Port,
+			User:     cfg.Database.User,
+			Password: cfg.Database.Password,
+			DBName:   cfg.Database.DBName,
+		},
+	)
+
 	if err != nil {
 		log.Fatalf("Failed to initialize TimescaleDB: %v", err)
 	}
@@ -60,14 +63,6 @@ func main() {
 
 	// Initialize User Store
 	userStore := store.NewUserStore(userDB)
-
-	// Initialize schema for both databases
-	if err := tsdb.InitSchema(context.Background()); err != nil {
-		log.Fatalf("Failed to initialize TimescaleDB schema: %v", err)
-	}
-	if err := userDB.InitSchema(context.Background()); err != nil {
-		log.Fatalf("Failed to initialize User DB schema: %v", err)
-	}
 
 	// Initialize server with both databases and JWT service
 	srv, err := server.New(cfg, tsdb, userDB, jwtService, userStore)

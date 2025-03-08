@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"backend/internal/auth"
-	"backend/internal/models"
+	"backend/internal/database/models"
 	"backend/internal/store"
 
 	"github.com/gin-gonic/gin"
